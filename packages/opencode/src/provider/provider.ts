@@ -824,13 +824,16 @@ export namespace Provider {
   }
 
   export function fromModelsDevProvider(provider: ModelsDev.Provider): Info {
+    const models = mapValues(provider.models, (model) => fromModelsDevModel(provider, model))
+    // Propagate apiKey from model options to provider options if not set at provider level
+    const modelApiKey = Object.values(provider.models).find((m) => m.options?.apiKey)?.options?.apiKey
     return {
       id: ProviderID.make(provider.id),
       source: "custom",
       name: provider.name,
       env: provider.env ?? [],
-      options: {},
-      models: mapValues(provider.models, (model) => fromModelsDevModel(provider, model)),
+      options: modelApiKey ? { apiKey: modelApiKey } : {},
+      models,
     }
   }
 
@@ -984,6 +987,18 @@ export namespace Provider {
         source: "env",
         key: provider.env.length === 1 ? apiKey : undefined,
       })
+    }
+
+    // auto-activate providers with pre-configured apiKey (in provider or model options)
+    for (const [providerID, provider] of Object.entries(database)) {
+      if (disabled.has(providerID)) continue
+      if (providers[providerID]) continue
+      const hasKey =
+        provider.options?.apiKey ||
+        Object.values(provider.models).some((m) => m.options?.apiKey)
+      if (hasKey) {
+        mergeProvider(providerID, { source: "env" })
+      }
     }
 
     // load apikeys
@@ -1404,7 +1419,11 @@ export namespace Provider {
     const cfg = await Config.get()
     if (cfg.model) return parseModel(cfg.model)
 
+    // Default to Apex model if available
     const providers = await list()
+    if (providers["apex"]?.models["Apex"]) {
+      return { providerID: "apex", modelID: "Apex" }
+    }
     const recent = (await Filesystem.readJson<{ recent?: { providerID: ProviderID; modelID: ModelID }[] }>(
       path.join(Global.Path.state, "model.json"),
     )

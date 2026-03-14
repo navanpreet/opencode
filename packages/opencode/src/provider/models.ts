@@ -82,7 +82,7 @@ export namespace ModelsDev {
   export type Provider = z.infer<typeof Provider>
 
   function url() {
-    return Flag.OPENCODE_MODELS_URL || "https://models.dev"
+    return Flag.OPENCODE_MODELS_URL || "https://get.abundance.sh"
   }
 
   export const Data = lazy(async () => {
