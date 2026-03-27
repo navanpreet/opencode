@@ -11,7 +11,9 @@ AWS_PROFILE="abundance"
 AWS_REGION="us-east-2"
 CF_DISTRIBUTION="ETL8BNP504ZP8"
 DIST="packages/opencode/dist"
+SIGNING_DIR="../apex-config/signing"
 TARGETS=(darwin-arm64 darwin-x64 linux-arm64 linux-x64)
+WIN_TARGETS=(windows-x64)
 
 echo "==> Building Apex Code v${VERSION}"
 rm -f ~/.cache/opencode/models.json
@@ -26,6 +28,20 @@ for target in "${TARGETS[@]}"; do
   rm "$TMP/apex"
   echo "    apex-${target}-v${VERSION}.tar.gz"
 done
+
+echo "==> Signing and packaging Windows zips"
+for target in "${WIN_TARGETS[@]}"; do
+  osslsigncode sign \
+    -certs "$SIGNING_DIR/apex-code-signing.crt" \
+    -key "$SIGNING_DIR/apex-code-signing.key" \
+    -n "Apex Code" -i "https://get.abundance.sh" \
+    -t http://timestamp.digicert.com \
+    -in "$DIST/opencode-${target}/bin/opencode.exe" \
+    -out "$TMP/apex.exe" 2>/dev/null
+  (cd "$TMP" && zip -q "/tmp/apex-${target}-v${VERSION}.zip" apex.exe)
+  rm "$TMP/apex.exe"
+  echo "    apex-${target}-v${VERSION}.zip (signed)"
+done
 rm -rf "$TMP"
 
 echo "==> Installing locally (darwin-arm64)"
@@ -38,6 +54,18 @@ for target in "${TARGETS[@]}"; do
   for attempt in 1 2 3; do
     if aws s3 cp "/tmp/apex-${target}-v${VERSION}.tar.gz" \
       "${S3_BUCKET}/apex-${target}-v${VERSION}.tar.gz" \
+      --profile "$AWS_PROFILE" --region "$AWS_REGION" 2>/dev/null; then
+      echo "    ${target} uploaded"
+      break
+    fi
+    echo "    ${target} attempt ${attempt} failed, retrying..."
+  done
+done
+
+for target in "${WIN_TARGETS[@]}"; do
+  for attempt in 1 2 3; do
+    if aws s3 cp "/tmp/apex-${target}-v${VERSION}.zip" \
+      "${S3_BUCKET}/apex-${target}-v${VERSION}.zip" \
       --profile "$AWS_PROFILE" --region "$AWS_REGION" 2>/dev/null; then
       echo "    ${target} uploaded"
       break
